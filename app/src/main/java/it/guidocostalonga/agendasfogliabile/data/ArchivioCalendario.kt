@@ -37,6 +37,7 @@ class ArchivioCalendario(context: Context) {
             CalendarContract.Calendars.ACCOUNT_NAME,
             CalendarContract.Calendars.CALENDAR_COLOR,
             CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+            CalendarContract.Calendars.ACCOUNT_TYPE,
         )
         val ordine = "${CalendarContract.Calendars.ACCOUNT_NAME} ASC, " +
             "${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} ASC"
@@ -47,6 +48,7 @@ class ArchivioCalendario(context: Context) {
                     id = c.getLong(0),
                     nome = c.getString(1) ?: "",
                     account = c.getString(2) ?: "",
+                    tipoAccount = c.getString(5) ?: "",
                     colore = c.getInt(3),
                     scrivibile = c.getInt(4) >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR,
                 )

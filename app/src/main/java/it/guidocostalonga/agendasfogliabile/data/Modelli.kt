@@ -16,6 +16,7 @@ data class Calendario(
     val id: Long,
     val nome: String,
     val account: String,
+    val tipoAccount: String,
     val colore: Int,
     val scrivibile: Boolean,
 )
