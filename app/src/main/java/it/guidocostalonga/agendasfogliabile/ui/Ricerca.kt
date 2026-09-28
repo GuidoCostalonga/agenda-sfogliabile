@@ -25,7 +25,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import it.guidocostalonga.agendasfogliabile.data.ArchivioCalendario
+import it.guidocostalonga.agendasfogliabile.data.FonteCalendario
+import it.guidocostalonga.agendasfogliabile.data.descriviErrore
 import it.guidocostalonga.agendasfogliabile.data.Impegno
 import it.guidocostalonga.agendasfogliabile.util.dataConGiorno
 import kotlinx.coroutines.Dispatchers
@@ -37,13 +38,14 @@ import java.time.ZoneId
 /** Cerca un impegno per parola, dall'anno scorso ai prossimi due anni. */
 @Composable
 fun Ricerca(
-    archivio: ArchivioCalendario,
-    scelti: Set<Long>?,
+    fonte: FonteCalendario,
+    scelti: Set<String>?,
     onIndietro: () -> Unit,
     onGiorno: (LocalDate) -> Unit,
 ) {
     var testo by rememberSaveable { mutableStateOf("") }
     var risultati by remember { mutableStateOf<List<Impegno>?>(emptyList()) }
+    var problema by remember { mutableStateOf<String?>(null) }
     val fuoco = remember { FocusRequester() }
     val zona = remember { ZoneId.systemDefault() }
 
@@ -57,8 +59,12 @@ fun Ricerca(
         risultati = null
         delay(300)
         val oggi = LocalDate.now()
-        risultati = withContext(Dispatchers.IO) {
-            archivio.impegni(oggi.minusYears(1), oggi.plusYears(2), scelti, cercato, 300)
+        problema = null
+        risultati = try {
+            withContext(Dispatchers.IO) { fonte.impegni(oggi.minusYears(1), oggi.plusYears(2), scelti, cercato, 300) }
+        } catch (e: Exception) {
+            problema = descriviErrore(e)
+            emptyList()
         }
     }
 
@@ -91,6 +97,7 @@ fun Ricerca(
                     fontSize = 14.sp,
                 )
                 elenco == null -> Text("Ricerca in corso…", color = Colori.InchiostroTenue)
+                problema != null -> Avviso(problema.orEmpty())
                 elenco.isEmpty() -> Text("Nessun impegno trovato.", color = Colori.InchiostroTenue)
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     var precedente: LocalDate? = null

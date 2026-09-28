@@ -20,14 +20,29 @@ girano con il dito.
 
 ## Come si collega a Google Calendar
 
-L'applicazione legge il calendario del telefono, che Android sincronizza già con
-l'account Google. Non serve alcuna configurazione su Google Cloud e non serve la
-rete: gli impegni restano sul telefono e l'applicazione non li invia a nessuno.
-Gli impegni creati o modificati dall'agenda arrivano su Google Calendar con la
-normale sincronizzazione.
+Al primo avvio si sceglie la fonte degli impegni (si cambia poi dal menu ⋮,
+«Calendari e collegamento»):
 
-Se un calendario non compare, controlla in Impostazioni, Account, Google, che la
-sincronizzazione del calendario sia attiva.
+| Fonte | Come funziona |
+|---|---|
+| Google Calendar, accesso diretto (consigliata) | L'agenda entra nell'account Google con il consenso della persona e legge e scrive gli impegni tramite l'interfaccia ufficiale di Google Calendar. Serve Internet. |
+| Calendario del telefono | L'agenda legge i calendari che Android ha già sincronizzato. Funziona senza rete, ma su alcuni telefoni il calendario Google non arriva ad Android. |
+
+### Configurazione su Google Cloud (una volta sola)
+
+L'accesso diretto richiede che l'applicazione sia registrata su Google Cloud:
+
+1. Su console.cloud.google.com crea un progetto, per esempio «Agenda Sfogliabile».
+2. In «API e servizi», «Libreria», abilita **Google Calendar API**.
+3. In «Google Auth Platform» completa la configurazione: nome dell'applicazione,
+   indirizzo di assistenza, pubblico **Esterno**. Poi, nella sezione «Pubblico»,
+   pubblica l'applicazione (altrimenti il consenso scade ogni sette giorni).
+4. In «Client» crea un client di tipo **Android** con:
+   - nome del pacchetto: `it.guidocostalonga.agendasfogliabile`
+   - impronta SHA-1 della chiave di firma dell'applicazione.
+
+Nell'applicazione non va inserito alcun codice: Google la riconosce dal nome del
+pacchetto e dall'impronta della chiave di firma.
 
 ## Come si installa
 

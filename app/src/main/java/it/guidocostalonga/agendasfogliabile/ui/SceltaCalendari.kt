@@ -1,12 +1,6 @@
 package it.guidocostalonga.agendasfogliabile.ui
 
-import android.accounts.Account
-import android.accounts.AccountManager
-import android.app.Activity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,67 +11,60 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import it.guidocostalonga.agendasfogliabile.data.ArchivioCalendario
 import it.guidocostalonga.agendasfogliabile.data.Calendario
+import it.guidocostalonga.agendasfogliabile.data.FonteCalendario
 import it.guidocostalonga.agendasfogliabile.data.Preferenze
-import it.guidocostalonga.agendasfogliabile.data.Sincronizzazione
+import it.guidocostalonga.agendasfogliabile.data.descriviErrore
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Sceglie quali calendari compaiono nell'agenda e nel riquadro della schermata iniziale. */
+/** Sceglie da dove leggere gli impegni e quali calendari mostrare. */
 @Composable
 fun SceltaCalendari(
-    archivio: ArchivioCalendario,
+    fonte: FonteCalendario,
+    fonteScelta: String,
+    email: String?,
     preferenze: Preferenze,
+    erroreCollegamento: String?,
     onIndietro: () -> Unit,
-    onCambio: (Set<Long>?) -> Unit,
+    onCambio: (Set<String>?) -> Unit,
+    onCollegaGoogle: () -> Unit,
+    onUsaTelefono: () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     var ricarica by remember { mutableIntStateOf(0) }
-    var esito by remember { mutableStateOf<String?>(null) }
-    val calendari by produceState<List<Calendario>?>(null, ricarica) {
-        value = withContext(Dispatchers.IO) { archivio.calendari() }
-    }
-    var scelti by remember { mutableStateOf(preferenze.calendariScelti) }
-    val sceltaAccount = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { risultato ->
-        val nome = risultato.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
-        val tipo = risultato.data?.getStringExtra(AccountManager.KEY_ACCOUNT_TYPE)
-        if (risultato.resultCode == Activity.RESULT_OK && nome != null && tipo != null) {
-            esito = Sincronizzazione.avvia(Account(nome, tipo))
-            // Ricarica l'elenco per un paio di minuti, mentre arrivano i calendari.
-            scope.launch {
-                repeat(24) {
-                    delay(5_000)
-                    ricarica++
-                }
-            }
+    var problema by remember(fonte) { mutableStateOf<String?>(null) }
+    val calendari by produceState<List<Calendario>?>(null, fonte, ricarica) {
+        value = null
+        value = try {
+            withContext(Dispatchers.IO) { fonte.calendari() }
+        } catch (e: Exception) {
+            problema = descriviErrore(e)
+            emptyList()
         }
     }
+    var scelti by remember(fonte) { mutableStateOf(preferenze.calendariScelti) }
+    val google = fonteScelta == Preferenze.FONTE_GOOGLE
 
-    fun imposta(nuovi: Set<Long>?) {
+    fun imposta(nuovi: Set<String>?) {
         scelti = nuovi
         preferenze.calendariScelti = nuovi
         onCambio(nuovi)
@@ -85,91 +72,126 @@ fun SceltaCalendari(
 
     Scaffold(
         containerColor = Colori.Pagina,
-        topBar = { BarraSuperiore("Calendari da mostrare", onIndietro) },
+        topBar = { BarraSuperiore("Calendari e collegamento", onIndietro) },
     ) { spazio ->
-        val elenco = calendari
-        if (elenco == null) {
-            Box(Modifier.padding(spazio).fillMaxSize())
-        } else {
-            val tutti = elenco.map { it.id }.toSet()
-            fun alterna(id: Long) {
-                val attuali = scelti ?: tutti
-                val nuovi = if (id in attuali) attuali - id else attuali + id
-                imposta(if (nuovi.containsAll(tutti)) null else nuovi)
+        val elenco = calendari.orEmpty()
+        val tutti = elenco.map { it.id }.toSet()
+        fun alterna(id: String) {
+            val attuali = scelti ?: tutti
+            val nuovi = if (id in attuali) attuali - id else attuali + id
+            imposta(if (nuovi.containsAll(tutti)) null else nuovi)
+        }
+        LazyColumn(
+            Modifier.padding(spazio).fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+        ) {
+            item {
+                Column {
+                    Etichetta("Da dove leggere gli impegni")
+                    Scelta(
+                        titolo = "Google Calendar, accesso diretto",
+                        spiegazione = if (google && email != null) {
+                            "Collegato come $email. Tocca qui per cambiare account o ricollegarti."
+                        } else {
+                            "L'agenda entra nel tuo account Google con il tuo consenso. Serve Internet."
+                        },
+                        attiva = google,
+                        onClick = onCollegaGoogle,
+                    )
+                    Scelta(
+                        titolo = "Calendario del telefono",
+                        spiegazione = "Legge i calendari che Android ha già sul telefono, anche senza rete.",
+                        attiva = !google,
+                        onClick = onUsaTelefono,
+                    )
+                    erroreCollegamento?.let { Avviso(it, Modifier.padding(top = 8.dp)) }
+                }
             }
-            LazyColumn(
-                Modifier.padding(spazio).fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-            ) {
-                item {
-                    Column {
-                        Text(
-                            "Scegli quali calendari compaiono nell'agenda e nel riquadro della schermata iniziale. " +
-                                "I calendari arrivano dagli account Google configurati sul telefono.",
-                            fontSize = 14.sp,
-                            color = Colori.InchiostroTenue,
-                        )
-                        Row {
-                            TextButton(onClick = { imposta(null) }) { Text("Mostra tutti", color = Colori.Copertina) }
-                            TextButton(onClick = { imposta(emptySet()) }) { Text("Nascondi tutti", color = Colori.Nastro) }
-                        }
-                        if (elenco.none { it.tipoAccount == Sincronizzazione.TIPO_GOOGLE }) {
-                            Avviso(
-                                "Sul telefono non è ancora arrivato nessun calendario Google. Succede quando " +
-                                    "la sincronizzazione del calendario per l'account Gmail è spenta: toccando " +
-                                    "il pulsante qui sotto la attivi e la avvii.",
-                                Modifier.padding(top = 8.dp),
-                            )
-                        }
-                        Button(
-                            onClick = { sceltaAccount.launch(Sincronizzazione.sceltaAccount()) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Colori.Copertina, contentColor = Color.White),
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        ) { Text("Collega e sincronizza un account Google") }
-                        esito?.let { Avviso(it, Modifier.padding(top = 8.dp)) }
+            item {
+                Column(Modifier.padding(top = 20.dp)) {
+                    Etichetta("Calendari da mostrare")
+                    Text(
+                        "Scegli quali calendari compaiono nell'agenda e nel riquadro della schermata iniziale.",
+                        fontSize = 14.sp,
+                        color = Colori.InchiostroTenue,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    Row {
+                        TextButton(onClick = { imposta(null) }) { Text("Mostra tutti", color = Colori.Copertina) }
+                        TextButton(onClick = { imposta(emptySet()) }) { Text("Nascondi tutti", color = Colori.Nastro) }
+                        TextButton(onClick = {
+                            problema = null
+                            fonte.svuota()
+                            ricarica++
+                        }) { Text("Ricarica", color = Colori.Copertina) }
                     }
-                }
-                if (elenco.isEmpty()) {
-                    item {
-                        Avviso(
-                            "Sul telefono non risulta alcun calendario. Controlla in Impostazioni, Account, " +
-                                "che l'account Google abbia attiva la sincronizzazione del calendario.",
+                    problema?.let { Avviso(it) }
+                    when {
+                        calendari == null -> Text("Caricamento…", color = Colori.InchiostroTenue)
+                        elenco.isEmpty() && problema == null -> Avviso(
+                            if (google) {
+                                "Nell'account Google non risulta alcun calendario."
+                            } else {
+                                "Sul telefono non risulta alcun calendario Google. Se in Google Calendar " +
+                                    "i tuoi impegni si vedono, scegli qui sopra l'accesso diretto a Google."
+                            },
                         )
                     }
                 }
-                elenco.groupBy { it.account }.forEach { (account, gruppo) ->
-                    item { Etichetta(account, Modifier.padding(top = 16.dp, bottom = 4.dp)) }
-                    items(gruppo) { calendario ->
-                        val attivo = scelti?.contains(calendario.id) ?: true
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable { alterna(calendario.id) }
-                                .padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(
-                                checked = attivo,
-                                onCheckedChange = { alterna(calendario.id) },
-                                colors = CheckboxDefaults.colors(checkedColor = coloreDi(calendario.colore)),
-                            )
-                            Pallino(calendario.colore)
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(calendario.nome, fontSize = 16.sp, color = Colori.Inchiostro)
-                                if (!calendario.scrivibile) {
-                                    Text(
-                                        "sola lettura",
-                                        fontSize = 12.sp,
-                                        fontStyle = FontStyle.Italic,
-                                        color = Colori.InchiostroTenue,
-                                    )
-                                }
+            }
+            elenco.groupBy { it.account }.forEach { (account, gruppo) ->
+                item { Etichetta(account, Modifier.padding(top = 16.dp, bottom = 4.dp)) }
+                items(gruppo) { calendario ->
+                    val attivo = scelti?.contains(calendario.id) ?: true
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { alterna(calendario.id) }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = attivo,
+                            onCheckedChange = { alterna(calendario.id) },
+                            colors = CheckboxDefaults.colors(checkedColor = coloreDi(calendario.colore)),
+                        )
+                        Pallino(calendario.colore)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(calendario.nome, fontSize = 16.sp, color = Colori.Inchiostro)
+                            if (!calendario.scrivibile) {
+                                Text(
+                                    "sola lettura",
+                                    fontSize = 12.sp,
+                                    fontStyle = FontStyle.Italic,
+                                    color = Colori.InchiostroTenue,
+                                )
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun Scelta(titolo: String, spiegazione: String, attiva: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(
+            selected = attiva,
+            onClick = onClick,
+            colors = RadioButtonDefaults.colors(selectedColor = Colori.Copertina),
+        )
+        Column(Modifier.weight(1f)) {
+            Text(titolo, fontSize = 16.sp, color = Colori.Inchiostro)
+            Text(spiegazione, fontSize = 13.sp, color = Colori.InchiostroTenue)
         }
     }
 }

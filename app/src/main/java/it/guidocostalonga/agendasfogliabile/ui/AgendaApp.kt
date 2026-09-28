@@ -28,6 +28,10 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -60,6 +64,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import it.guidocostalonga.agendasfogliabile.data.ArchivioCalendario
+import it.guidocostalonga.agendasfogliabile.data.FonteCalendario
+import it.guidocostalonga.agendasfogliabile.data.Fonti
+import it.guidocostalonga.agendasfogliabile.data.descriviErrore
 import it.guidocostalonga.agendasfogliabile.data.Impegno
 import it.guidocostalonga.agendasfogliabile.data.Preferenze
 import it.guidocostalonga.agendasfogliabile.util.giorniTra
@@ -83,22 +90,58 @@ sealed interface Schermata {
 }
 
 @Composable
-fun AgendaApp(archivio: ArchivioCalendario, preferenze: Preferenze, ripresa: Int) {
+fun AgendaApp(preferenze: Preferenze, ripresa: Int) {
     val context = LocalContext.current
-    var permesso by remember { mutableStateOf(archivio.puoLeggere()) }
+    val telefono = remember { ArchivioCalendario(context) }
+    var fonteScelta by remember { mutableStateOf(preferenze.fonte) }
+    var email by remember { mutableStateOf(preferenze.emailGoogle) }
+    var permesso by remember { mutableStateOf(telefono.puoLeggere()) }
+    var erroreCollegamento by remember { mutableStateOf<String?>(null) }
+    val fonte = remember(fonteScelta, email) { Fonti.attiva(context, preferenze) }
+
     val richiesta = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        permesso = archivio.puoLeggere()
+        permesso = telefono.puoLeggere()
         AgendaWidget.aggiorna(context)
     }
-    LaunchedEffect(ripresa) { permesso = archivio.puoLeggere() }
+    LaunchedEffect(ripresa) { permesso = telefono.puoLeggere() }
 
-    if (permesso) {
-        AgendaConPermesso(archivio, preferenze, ripresa)
+    fun usaGoogle(indirizzo: String) {
+        erroreCollegamento = null
+        preferenze.emailGoogle = indirizzo
+        preferenze.fonte = Preferenze.FONTE_GOOGLE
+        email = indirizzo
+        fonteScelta = Preferenze.FONTE_GOOGLE
+        AgendaWidget.aggiorna(context)
+    }
+
+    fun usaTelefono() {
+        preferenze.fonte = Preferenze.FONTE_TELEFONO
+        fonteScelta = Preferenze.FONTE_TELEFONO
+        if (!telefono.puoLeggere()) {
+            richiesta.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
+        }
+        AgendaWidget.aggiorna(context)
+    }
+
+    val collega = rememberCollegamentoGoogle(onFatto = { usaGoogle(it) }, onErrore = { erroreCollegamento = it })
+    val pronta = if (fonteScelta == Preferenze.FONTE_GOOGLE) email != null else permesso
+
+    if (pronta) {
+        AgendaConFonte(
+            fonte = fonte,
+            fonteScelta = fonteScelta,
+            email = email,
+            preferenze = preferenze,
+            ripresa = ripresa,
+            erroreCollegamento = erroreCollegamento,
+            onCollegaGoogle = { collega() },
+            onUsaTelefono = { usaTelefono() },
+        )
     } else {
-        RichiestaPermesso(
-            onConsenti = {
-                richiesta.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
-            },
+        Benvenuto(
+            errore = erroreCollegamento,
+            onGoogle = { collega() },
+            onTelefono = { usaTelefono() },
             onImpostazioni = {
                 context.startActivity(
                     Intent(
@@ -112,12 +155,23 @@ fun AgendaApp(archivio: ArchivioCalendario, preferenze: Preferenze, ripresa: Int
 }
 
 @Composable
-private fun AgendaConPermesso(archivio: ArchivioCalendario, preferenze: Preferenze, ripresa: Int) {
+private fun AgendaConFonte(
+    fonte: FonteCalendario,
+    fonteScelta: String,
+    email: String?,
+    preferenze: Preferenze,
+    ripresa: Int,
+    erroreCollegamento: String?,
+    onCollegaGoogle: () -> Unit,
+    onUsaTelefono: () -> Unit,
+) {
     val context = LocalContext.current
     var modifiche by remember { mutableIntStateOf(0) }
+    var problema by remember(fonte) { mutableStateOf<String?>(null) }
 
-    // Ogni volta che il calendario cambia (anche per una sincronizzazione con Google) l'agenda si ricarica.
-    DisposableEffect(Unit) {
+    // Con il calendario del telefono l'agenda si ricarica a ogni cambiamento, anche da sincronizzazione.
+    DisposableEffect(fonte) {
+        if (fonte !is ArchivioCalendario) return@DisposableEffect onDispose { }
         val osservatore = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 modifiche++
@@ -132,20 +186,28 @@ private fun AgendaConPermesso(archivio: ArchivioCalendario, preferenze: Preferen
         AgendaWidget.aggiorna(context)
     }
 
-    var scelti by remember { mutableStateOf(preferenze.calendariScelti) }
+    var scelti by remember(fonteScelta) { mutableStateOf(preferenze.calendariScelti) }
     var settimana by rememberSaveable { mutableStateOf(preferenze.vistaSettimana) }
     var giornoScelto by rememberSaveable { mutableStateOf(LocalDate.now()) }
     var schermata by remember { mutableStateOf<Schermata>(Schermata.Agenda) }
+    val segnala: (Throwable) -> Unit = { problema = descriviErrore(it) }
 
     BackHandler(enabled = schermata != Schermata.Agenda) { schermata = Schermata.Agenda }
 
     when (val attuale = schermata) {
         Schermata.Agenda -> VistaAgenda(
-            archivio = archivio,
+            fonte = fonte,
             scelti = scelti,
             versione = versione,
             settimana = settimana,
             giornoScelto = giornoScelto,
+            problema = problema,
+            onErrore = segnala,
+            onRiprova = {
+                problema = null
+                fonte.svuota()
+                modifiche++
+            },
             onGiornoScelto = { giornoScelto = it },
             onSettimana = {
                 settimana = it
@@ -158,7 +220,7 @@ private fun AgendaConPermesso(archivio: ArchivioCalendario, preferenze: Preferen
             onIndice = { schermata = Schermata.Indice },
         )
         Schermata.Ricerca -> Ricerca(
-            archivio = archivio,
+            fonte = fonte,
             scelti = scelti,
             onIndietro = { schermata = Schermata.Agenda },
             onGiorno = {
@@ -167,17 +229,22 @@ private fun AgendaConPermesso(archivio: ArchivioCalendario, preferenze: Preferen
             },
         )
         Schermata.Calendari -> SceltaCalendari(
-            archivio = archivio,
+            fonte = fonte,
+            fonteScelta = fonteScelta,
+            email = email,
             preferenze = preferenze,
+            erroreCollegamento = erroreCollegamento,
             onIndietro = { schermata = Schermata.Agenda },
             onCambio = {
                 scelti = it
                 AgendaWidget.aggiorna(context)
             },
+            onCollegaGoogle = onCollegaGoogle,
+            onUsaTelefono = onUsaTelefono,
         )
         Schermata.Indice -> IndiceMese(
             iniziale = giornoScelto,
-            archivio = archivio,
+            fonte = fonte,
             scelti = scelti,
             versione = versione,
             onScegli = {
@@ -187,13 +254,14 @@ private fun AgendaConPermesso(archivio: ArchivioCalendario, preferenze: Preferen
             onChiudi = { schermata = Schermata.Agenda },
         )
         is Schermata.Editor -> EditorImpegno(
-            archivio = archivio,
+            fonte = fonte,
             preferenze = preferenze,
             impegno = attuale.impegno,
             giorno = attuale.giorno,
             ora = attuale.ora,
         ) { salvato ->
             if (salvato) {
+                fonte.svuota()
                 modifiche++
                 AgendaWidget.aggiorna(context)
             }
@@ -205,11 +273,14 @@ private fun AgendaConPermesso(archivio: ArchivioCalendario, preferenze: Preferen
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun VistaAgenda(
-    archivio: ArchivioCalendario,
-    scelti: Set<Long>?,
+    fonte: FonteCalendario,
+    scelti: Set<String>?,
     versione: Int,
     settimana: Boolean,
     giornoScelto: LocalDate,
+    problema: String?,
+    onErrore: (Throwable) -> Unit,
+    onRiprova: () -> Unit,
     onGiornoScelto: (LocalDate) -> Unit,
     onSettimana: (Boolean) -> Unit,
     onApri: (Impegno) -> Unit,
@@ -272,7 +343,14 @@ private fun VistaAgenda(
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("Calendari da mostrare") },
+                            text = { Text("Aggiorna gli impegni") },
+                            onClick = {
+                                menu = false
+                                onRiprova()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Calendari e collegamento") },
                             onClick = {
                                 menu = false
                                 onCalendari()
@@ -294,8 +372,13 @@ private fun VistaAgenda(
             Sfogliatore(stato, Modifier.fillMaxSize()) { pagina ->
                 if (settimana) {
                     val lunedi = lunediDi(oggi).plusWeeks((pagina - CENTRO).toLong())
-                    val impegni by produceState<List<Impegno>?>(null, lunedi, scelti, versione) {
-                        value = withContext(Dispatchers.IO) { archivio.impegni(lunedi, lunedi.plusDays(6), scelti) }
+                    val impegni by produceState<List<Impegno>?>(null, lunedi, scelti, versione, fonte) {
+                        value = try {
+                            withContext(Dispatchers.IO) { fonte.impegni(lunedi, lunedi.plusDays(6), scelti) }
+                        } catch (e: Exception) {
+                            onErrore(e)
+                            emptyList()
+                        }
                     }
                     PagineSettimana(
                         lunedi = lunedi,
@@ -311,8 +394,13 @@ private fun VistaAgenda(
                     )
                 } else {
                     val giorno = oggi.plusDays((pagina - CENTRO).toLong())
-                    val impegni by produceState<List<Impegno>?>(null, giorno, scelti, versione) {
-                        value = withContext(Dispatchers.IO) { archivio.impegni(giorno, giorno, scelti) }
+                    val impegni by produceState<List<Impegno>?>(null, giorno, scelti, versione, fonte) {
+                        value = try {
+                            withContext(Dispatchers.IO) { fonte.impegni(giorno, giorno, scelti) }
+                        } catch (e: Exception) {
+                            onErrore(e)
+                            emptyList()
+                        }
                     }
                     Box(Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.TopCenter) {
                         PaginaGiorno(
@@ -327,17 +415,33 @@ private fun VistaAgenda(
                 }
             }
             Nastro(Modifier.align(Alignment.TopEnd).padding(end = 40.dp))
+            if (problema != null) {
+                Column(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(start = 16.dp, end = 88.dp, bottom = 16.dp)
+                        .widthIn(max = 560.dp),
+                ) {
+                    Avviso(problema)
+                    TextButton(onClick = onRiprova) { Text("Riprova", color = Color.White, fontWeight = FontWeight.Bold) }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun RichiestaPermesso(onConsenti: () -> Unit, onImpostazioni: () -> Unit) {
+private fun Benvenuto(
+    errore: String?,
+    onGoogle: () -> Unit,
+    onTelefono: () -> Unit,
+    onImpostazioni: () -> Unit,
+) {
     Box(
         Modifier.fillMaxSize().background(Colori.Copertina).padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Pagina(Modifier.widthIn(max = 520.dp).fillMaxWidth()) {
+        Pagina(Modifier.widthIn(max = 520.dp).fillMaxWidth().verticalScroll(rememberScrollState())) {
             Text(
                 "Agenda Sfogliabile",
                 fontFamily = Grazie,
@@ -347,26 +451,38 @@ private fun RichiestaPermesso(onConsenti: () -> Unit, onImpostazioni: () -> Unit
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "Per mostrarti i tuoi impegni l'agenda deve leggere il calendario del telefono, " +
-                    "lo stesso che si sincronizza con Google Calendar. Gli appuntamenti restano sul " +
-                    "telefono: l'applicazione non li invia a nessuno.",
-                fontSize = 16.sp,
+                "Da dove vuoi leggere i tuoi impegni?",
+                fontFamily = Grazie,
+                fontSize = 18.sp,
                 color = Colori.Inchiostro,
             )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Per aggiungere e modificare impegni dall'agenda, consenti anche la modifica del calendario.",
-                fontSize = 16.sp,
-                color = Colori.Inchiostro,
-            )
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
             Button(
-                onClick = onConsenti,
+                onClick = onGoogle,
                 colors = ButtonDefaults.buttonColors(containerColor = Colori.Copertina, contentColor = Color.White),
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Consenti l'accesso al calendario") }
+            ) { Text("Collegati a Google Calendar") }
+            Text(
+                "Consigliato. L'agenda entra nel tuo account Google con il tuo consenso e legge e scrive " +
+                    "gli impegni direttamente su Google Calendar. Serve la connessione a Internet.",
+                fontSize = 14.sp,
+                color = Colori.InchiostroTenue,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            errore?.let { Avviso(it, Modifier.padding(top = 8.dp)) }
+            Spacer(Modifier.height(20.dp))
+            OutlinedButton(onClick = onTelefono, modifier = Modifier.fillMaxWidth()) {
+                Text("Usa il calendario del telefono", color = Colori.Copertina)
+            }
+            Text(
+                "L'agenda legge i calendari che Android ha già sul telefono. Funziona senza rete, " +
+                    "ma solo se il telefono sincronizza davvero il calendario Google.",
+                fontSize = 14.sp,
+                color = Colori.InchiostroTenue,
+                modifier = Modifier.padding(top = 6.dp),
+            )
             TextButton(onClick = onImpostazioni, modifier = Modifier.fillMaxWidth()) {
-                Text("La richiesta non compare? Apri le impostazioni", color = Colori.Copertina)
+                Text("Permesso negato in passato? Apri le impostazioni", color = Colori.Copertina)
             }
         }
     }

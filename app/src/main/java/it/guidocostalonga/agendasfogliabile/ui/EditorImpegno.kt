@@ -5,6 +5,7 @@ import android.app.TimePickerDialog
 import android.content.ActivityNotFoundException
 import android.content.ContentUris
 import android.content.Intent
+import android.net.Uri
 import android.provider.CalendarContract
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,7 +45,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import it.guidocostalonga.agendasfogliabile.data.ArchivioCalendario
+import it.guidocostalonga.agendasfogliabile.data.FonteCalendario
+import it.guidocostalonga.agendasfogliabile.data.descriviErrore
 import it.guidocostalonga.agendasfogliabile.data.Bozza
 import it.guidocostalonga.agendasfogliabile.data.Calendario
 import it.guidocostalonga.agendasfogliabile.data.Impegno
@@ -64,7 +66,7 @@ import java.time.LocalDateTime
  */
 @Composable
 fun EditorImpegno(
-    archivio: ArchivioCalendario,
+    fonte: FonteCalendario,
     preferenze: Preferenze,
     impegno: Impegno?,
     giorno: LocalDate,
@@ -74,18 +76,25 @@ fun EditorImpegno(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val calendari by produceState<List<Calendario>>(emptyList()) {
-        value = withContext(Dispatchers.IO) { archivio.calendari() }
+        value = withContext(Dispatchers.IO) { runCatching { fonte.calendari() }.getOrDefault(emptyList()) }
     }
     val modificabili = calendari.filter { it.scrivibile }
     var bozza by remember { mutableStateOf<Bozza?>(null) }
     var errore by remember { mutableStateOf<String?>(null) }
     var conferma by remember { mutableStateOf(false) }
-    val puoScrivere = remember { archivio.puoScrivere() }
+    val puoScrivere = remember(fonte) { fonte.puoScrivere() }
     val solaLettura = !puoScrivere || (impegno != null && (!impegno.scrivibile || impegno.ricorrente))
 
     LaunchedEffect(Unit) {
         bozza = if (impegno != null) {
-            withContext(Dispatchers.IO) { archivio.bozza(impegno) }
+            withContext(Dispatchers.IO) {
+                try {
+                    fonte.bozza(impegno)
+                } catch (e: Exception) {
+                    errore = descriviErrore(e)
+                    null
+                }
+            }
         } else {
             val inizio = giorno.atTime(ora ?: 9, 0)
             Bozza(calendarioId = preferenze.ultimoCalendario, inizio = inizio, fine = inizio.plusHours(1))
@@ -121,23 +130,25 @@ fun EditorImpegno(
             return
         }
         scope.launch {
-            val riuscito = withContext(Dispatchers.IO) { runCatching { archivio.salva(b) }.isSuccess }
-            if (riuscito) {
+            val esito = withContext(Dispatchers.IO) { runCatching { fonte.salva(b) } }
+            if (esito.isSuccess) {
                 preferenze.ultimoCalendario = b.calendarioId
                 onChiudi(true)
             } else {
-                errore = "Salvataggio non riuscito. Riprova."
+                errore = "Salvataggio non riuscito. " + descriviErrore(esito.exceptionOrNull()!!)
             }
         }
     }
 
     fun apriNelCalendario(voce: Impegno) {
-        val intento = Intent(
-            Intent.ACTION_VIEW,
-            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, voce.eventoId),
-        )
-            .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, voce.inizio)
-            .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, voce.fine)
+        val numero = voce.eventoId.toLongOrNull()
+        val intento = if (voce.collegamento != null || numero == null) {
+            Intent(Intent.ACTION_VIEW, Uri.parse(voce.collegamento ?: "https://calendar.google.com/"))
+        } else {
+            Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, numero))
+                .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, voce.inizio)
+                .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, voce.fine)
+        }
         try {
             context.startActivity(intento)
         } catch (e: ActivityNotFoundException) {
@@ -167,7 +178,9 @@ fun EditorImpegno(
     ) { spazio ->
         val b = bozza
         if (b == null) {
-            Box(Modifier.padding(spazio).fillMaxSize())
+            Box(Modifier.padding(spazio).fillMaxSize().padding(16.dp)) {
+                errore?.let { Avviso(it) }
+            }
         } else {
             Column(
                 Modifier
@@ -253,8 +266,12 @@ fun EditorImpegno(
                 TextButton(onClick = {
                     conferma = false
                     scope.launch {
-                        withContext(Dispatchers.IO) { runCatching { archivio.elimina(impegno.eventoId) } }
-                        onChiudi(true)
+                        val esito = withContext(Dispatchers.IO) { runCatching { fonte.elimina(impegno) } }
+                        if (esito.isSuccess) {
+                            onChiudi(true)
+                        } else {
+                            errore = "Eliminazione non riuscita. " + descriviErrore(esito.exceptionOrNull()!!)
+                        }
                     }
                 }) { Text("Elimina", color = Colori.Nastro) }
             },
@@ -268,9 +285,9 @@ fun EditorImpegno(
 @Composable
 private fun SelettoreCalendario(
     calendari: List<Calendario>,
-    scelto: Long,
+    scelto: String,
     abilitato: Boolean,
-    onScelta: (Long) -> Unit,
+    onScelta: (String) -> Unit,
 ) {
     var aperto by remember { mutableStateOf(false) }
     val attuale = calendari.firstOrNull { it.id == scelto }

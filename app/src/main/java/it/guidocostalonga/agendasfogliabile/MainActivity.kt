@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableIntStateOf
-import it.guidocostalonga.agendasfogliabile.data.ArchivioCalendario
 import it.guidocostalonga.agendasfogliabile.data.Preferenze
 import it.guidocostalonga.agendasfogliabile.ui.AgendaApp
 import it.guidocostalonga.agendasfogliabile.ui.TemaAgenda
@@ -16,11 +15,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val archivio = ArchivioCalendario(this)
         val preferenze = Preferenze(this)
         setContent {
             TemaAgenda {
-                AgendaApp(archivio, preferenze, ripresa.intValue)
+                AgendaApp(preferenze, ripresa.intValue)
             }
         }
     }

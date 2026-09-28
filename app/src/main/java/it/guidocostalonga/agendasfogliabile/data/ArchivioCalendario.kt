@@ -18,18 +18,18 @@ import java.time.ZoneOffset
  * Legge e scrive gli impegni nel calendario del telefono.
  * Android sincronizza questo calendario con Google Calendar in automatico.
  */
-class ArchivioCalendario(context: Context) {
+class ArchivioCalendario(context: Context) : FonteCalendario {
     private val context: Context = context.applicationContext
     private val resolver: ContentResolver get() = context.contentResolver
 
     fun puoLeggere(): Boolean = concesso(Manifest.permission.READ_CALENDAR)
 
-    fun puoScrivere(): Boolean = concesso(Manifest.permission.WRITE_CALENDAR)
+    override fun puoScrivere(): Boolean = concesso(Manifest.permission.WRITE_CALENDAR)
 
     private fun concesso(permesso: String): Boolean =
         ContextCompat.checkSelfPermission(context, permesso) == PackageManager.PERMISSION_GRANTED
 
-    fun calendari(): List<Calendario> {
+    override fun calendari(): List<Calendario> {
         if (!puoLeggere()) return emptyList()
         val proiezione = arrayOf(
             CalendarContract.Calendars._ID,
@@ -45,7 +45,7 @@ class ArchivioCalendario(context: Context) {
         resolver.query(CalendarContract.Calendars.CONTENT_URI, proiezione, null, null, ordine)?.use { c ->
             while (c.moveToNext()) {
                 elenco += Calendario(
-                    id = c.getLong(0),
+                    id = c.getLong(0).toString(),
                     nome = c.getString(1) ?: "",
                     account = c.getString(2) ?: "",
                     tipoAccount = c.getString(5) ?: "",
@@ -61,15 +61,16 @@ class ArchivioCalendario(context: Context) {
      * Impegni che toccano i giorni da [dal] ad [al] compresi.
      * [scelti] null significa tutti i calendari; [filtro] cerca in titolo, luogo e descrizione.
      */
-    fun impegni(
+    override fun impegni(
         dal: LocalDate,
         al: LocalDate,
-        scelti: Set<Long>?,
-        filtro: String? = null,
-        limite: Int = Int.MAX_VALUE,
+        scelti: Set<String>?,
+        filtro: String?,
+        limite: Int,
     ): List<Impegno> {
         if (!puoLeggere()) return emptyList()
-        if (scelti != null && scelti.isEmpty()) return emptyList()
+        val numeri = scelti?.mapNotNull { it.toLongOrNull() }
+        if (numeri != null && numeri.isEmpty()) return emptyList()
         val zona = ZoneId.systemDefault()
         // Margine di un giorno per parte: gli eventi di un giorno intero sono in tempo universale.
         val inizio = dal.minusDays(1).atStartOfDay(zona).toInstant().toEpochMilli()
@@ -80,8 +81,8 @@ class ArchivioCalendario(context: Context) {
 
         val condizioni = mutableListOf<String>()
         val argomenti = mutableListOf<String>()
-        if (scelti != null) {
-            condizioni += "${CalendarContract.Instances.CALENDAR_ID} IN (${scelti.joinToString(",")})"
+        if (numeri != null) {
+            condizioni += "${CalendarContract.Instances.CALENDAR_ID} IN (${numeri.joinToString(",")})"
         }
         if (!filtro.isNullOrBlank()) {
             condizioni += "(${CalendarContract.Instances.TITLE} LIKE ? OR " +
@@ -114,8 +115,8 @@ class ArchivioCalendario(context: Context) {
         )?.use { c ->
             while (c.moveToNext()) {
                 val impegno = Impegno(
-                    eventoId = c.getLong(0),
-                    calendarioId = c.getLong(1),
+                    eventoId = c.getLong(0).toString(),
+                    calendarioId = c.getLong(1).toString(),
                     titolo = c.getString(2)?.takeIf { it.isNotBlank() } ?: "(senza titolo)",
                     luogo = c.getString(3) ?: "",
                     inizio = c.getLong(4),
@@ -137,12 +138,12 @@ class ArchivioCalendario(context: Context) {
     }
 
     /** Prepara la bozza per modificare un impegno esistente. */
-    fun bozza(impegno: Impegno): Bozza {
+    override fun bozza(impegno: Impegno): Bozza {
         val zona = ZoneId.systemDefault()
         var titolo = impegno.titolo
         var descrizione = ""
         resolver.query(
-            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, impegno.eventoId),
+            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, impegno.eventoId.toLong()),
             arrayOf(CalendarContract.Events.TITLE, CalendarContract.Events.DESCRIPTION),
             null,
             null,
@@ -175,7 +176,7 @@ class ArchivioCalendario(context: Context) {
     }
 
     /** Salva la bozza e restituisce l'identificativo dell'evento. */
-    fun salva(bozza: Bozza): Long {
+    override fun salva(bozza: Bozza): String {
         val valori = ContentValues().apply {
             put(CalendarContract.Events.TITLE, bozza.titolo.trim())
             put(CalendarContract.Events.EVENT_LOCATION, bozza.luogo.trim())
@@ -197,17 +198,21 @@ class ArchivioCalendario(context: Context) {
         }
         val id = bozza.eventoId
         return if (id == null) {
-            valori.put(CalendarContract.Events.CALENDAR_ID, bozza.calendarioId)
+            valori.put(CalendarContract.Events.CALENDAR_ID, bozza.calendarioId.toLong())
             val indirizzo = resolver.insert(CalendarContract.Events.CONTENT_URI, valori)
                 ?: error("Inserimento non riuscito")
-            ContentUris.parseId(indirizzo)
+            ContentUris.parseId(indirizzo).toString()
         } else {
-            resolver.update(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id), valori, null, null)
+            resolver.update(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id.toLong()), valori, null, null)
             id
         }
     }
 
-    fun elimina(eventoId: Long) {
-        resolver.delete(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventoId), null, null)
+    override fun elimina(impegno: Impegno) {
+        resolver.delete(
+            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, impegno.eventoId.toLong()),
+            null,
+            null,
+        )
     }
 }

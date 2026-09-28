@@ -37,7 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import it.guidocostalonga.agendasfogliabile.data.ArchivioCalendario
+import it.guidocostalonga.agendasfogliabile.data.FonteCalendario
 import it.guidocostalonga.agendasfogliabile.util.titolo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,20 +49,20 @@ import java.time.ZoneId
 @Composable
 fun IndiceMese(
     iniziale: LocalDate,
-    archivio: ArchivioCalendario,
-    scelti: Set<Long>?,
+    fonte: FonteCalendario,
+    scelti: Set<String>?,
     versione: Int,
     onScegli: (LocalDate) -> Unit,
     onChiudi: () -> Unit,
 ) {
     var mese by remember { mutableStateOf(YearMonth.from(iniziale)) }
-    val occupati by produceState(emptySet<LocalDate>(), mese, scelti, versione) {
+    val occupati by produceState(emptySet<LocalDate>(), mese, scelti, versione, fonte) {
         value = withContext(Dispatchers.IO) {
             val zona = ZoneId.systemDefault()
             val primo = mese.atDay(1)
             val ultimo = mese.atEndOfMonth()
             val giorni = mutableSetOf<LocalDate>()
-            archivio.impegni(primo, ultimo, scelti).forEach { impegno ->
+            runCatching { fonte.impegni(primo, ultimo, scelti) }.getOrDefault(emptyList()).forEach { impegno ->
                 var giorno = impegno.giornoInizio(zona).let { if (it.isBefore(primo)) primo else it }
                 val fine = impegno.giornoFine(zona).let { if (it.isAfter(ultimo)) ultimo else it }
                 while (!giorno.isAfter(fine)) {

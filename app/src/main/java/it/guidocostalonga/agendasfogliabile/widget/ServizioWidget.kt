@@ -5,7 +5,7 @@ import android.content.Intent
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import it.guidocostalonga.agendasfogliabile.R
-import it.guidocostalonga.agendasfogliabile.data.ArchivioCalendario
+import it.guidocostalonga.agendasfogliabile.data.Fonti
 import it.guidocostalonga.agendasfogliabile.data.Impegno
 import it.guidocostalonga.agendasfogliabile.data.Preferenze
 import it.guidocostalonga.agendasfogliabile.util.testo
@@ -26,7 +26,8 @@ private class Elenco(private val context: Context) : RemoteViewsService.RemoteVi
     override fun onDataSetChanged() {
         giorno = LocalDate.now()
         impegni = try {
-            ArchivioCalendario(context).impegni(giorno, giorno, Preferenze(context).calendariScelti)
+            val preferenze = Preferenze(context)
+            Fonti.attiva(context, preferenze).impegni(giorno, giorno, preferenze.calendariScelti)
         } catch (e: Exception) {
             emptyList()
         }

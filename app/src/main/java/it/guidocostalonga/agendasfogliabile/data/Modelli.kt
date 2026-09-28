@@ -13,7 +13,7 @@ import java.time.ZoneOffset
 
 /** Un calendario sincronizzato sul telefono (per esempio un calendario Google). */
 data class Calendario(
-    val id: Long,
+    val id: String,
     val nome: String,
     val account: String,
     val tipoAccount: String,
@@ -23,8 +23,8 @@ data class Calendario(
 
 /** Una singola occorrenza di un evento del calendario. */
 data class Impegno(
-    val eventoId: Long,
-    val calendarioId: Long,
+    val eventoId: String,
+    val calendarioId: String,
     val titolo: String,
     val luogo: String,
     val inizio: Long,
@@ -33,6 +33,8 @@ data class Impegno(
     val colore: Int,
     val scrivibile: Boolean,
     val ricorrente: Boolean,
+    /** Indirizzo dell'impegno su Google Calendar, quando la fonte è l'accesso diretto. */
+    val collegamento: String? = null,
 ) {
     // Gli eventi di un giorno intero sono salvati a mezzanotte del tempo universale.
     private fun zonaDi(zona: ZoneId): ZoneId = if (tuttoIlGiorno) ZoneOffset.UTC else zona
@@ -82,8 +84,8 @@ data class Impegno(
 
 /** Dati di un impegno mentre lo si scrive o lo si modifica. */
 data class Bozza(
-    val eventoId: Long? = null,
-    val calendarioId: Long = -1,
+    val eventoId: String? = null,
+    val calendarioId: String = "",
     val titolo: String = "",
     val luogo: String = "",
     val descrizione: String = "",
