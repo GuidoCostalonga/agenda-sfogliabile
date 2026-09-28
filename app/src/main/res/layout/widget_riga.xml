@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/riga"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
+
+    <TextView
+        android:id="@+id/pallino"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingEnd="6dp"
+        android:text="●"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/ora"
+        android:layout_width="92dp"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:textColor="@color/inchiostro_tenue"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/titolo"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/inchiostro"
+        android:textSize="14sp" />
+</LinearLayout>
