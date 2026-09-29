@@ -57,6 +57,8 @@ fun descriviErrore(errore: Throwable): String {
         is UnknownHostException, is ConnectException, is SocketTimeoutException ->
             "Nessuna connessione a Internet: gli impegni si aggiorneranno appena torni in rete."
         is ApiException -> erroreGoogle(causa)
+        is java.io.IOException -> causa.message?.takeIf { it.startsWith("Google ") }
+            ?: "Collegamento con Google non riuscito: riprova."
         else -> "Google non ha risposto come previsto (${causa.message?.take(200) ?: causa.javaClass.simpleName})."
     }
 }

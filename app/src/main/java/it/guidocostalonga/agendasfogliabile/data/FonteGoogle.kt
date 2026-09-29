@@ -58,10 +58,21 @@ object AccessoGoogle {
         }
     }
 
-    fun spiegaRisposta(corpo: String): String = when {
-        "accessNotConfigured" in corpo || "SERVICE_DISABLED" in corpo ->
-            "Su Google Cloud Console va abilitata la Google Calendar API per il progetto."
-        else -> corpo.take(200)
+    fun spiegaRisposta(corpo: String): String {
+        val messaggio = runCatching { JSONObject(corpo).getJSONObject("error").optString("message") }
+            .getOrNull()
+            .orEmpty()
+        return when {
+            "accessNotConfigured" in corpo || "SERVICE_DISABLED" in corpo ->
+                "Su Google Cloud Console va abilitata la Google Calendar API per il progetto."
+            "forbiddenForNonOrganizer" in corpo ->
+                "Solo chi ha organizzato l'impegno può modificarlo."
+            "eventTypeRestriction" in corpo || "birthday" in corpo.lowercase() ->
+                "Google non consente di modificare questo tipo di impegno."
+            "timeRangeEmpty" in corpo -> "La fine deve venire dopo l'inizio."
+            messaggio.isNotBlank() -> "Motivo indicato da Google: $messaggio."
+            else -> corpo.take(200)
+        }
     }
 }
 
@@ -128,7 +139,7 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
                 if (codice == 401 && tentativo == 0) continue
                 if (codice !in 200..299) {
                     val dettaglio = connessione.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                    throw IOException("Google ha risposto $codice. ${AccessoGoogle.spiegaRisposta(dettaglio)}")
+                    throw IOException("Google ha rifiutato l'operazione (codice $codice). ${AccessoGoogle.spiegaRisposta(dettaglio)}")
                 }
                 if (codice == 204) return null
                 val testo = connessione.inputStream.bufferedReader().use { it.readText() }
@@ -222,7 +233,7 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
             fine = a,
             tuttoIlGiorno = tuttoIlGiorno,
             colore = coloreProprio?.takeIf { it != 0 } ?: calendario.colore,
-            scrivibile = calendario.scrivibile,
+            scrivibile = calendario.scrivibile && voce.optString("eventType", "default") in TIPI_MODIFICABILI,
             ricorrente = voce.has("recurringEventId") || voce.has("recurrence"),
             collegamento = voce.optString("htmlLink").takeIf { it.isNotEmpty() },
         )
@@ -314,39 +325,41 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
 
     override fun salva(bozza: Bozza): String {
         val zona = ZoneId.systemDefault()
-        val modifica = bozza.eventoId != null
-        val corpo = JSONObject().apply {
-            put("summary", bozza.titolo.trim())
-            put("location", bozza.luogo.trim())
-            put("description", bozza.descrizione.trim())
-            if (bozza.tuttoIlGiorno) {
-                put("start", JSONObject().put("date", bozza.inizio.toLocalDate().toString()).also { if (modifica) it.put("dateTime", JSONObject.NULL) })
-                put("end", JSONObject().put("date", bozza.fine.toLocalDate().plusDays(1).toString()).also { if (modifica) it.put("dateTime", JSONObject.NULL) })
-            } else {
-                put(
-                    "start",
-                    JSONObject()
-                        .put("dateTime", bozza.inizio.atZone(zona).toOffsetDateTime().toString())
-                        .put("timeZone", zona.id)
-                        .also { if (modifica) it.put("date", JSONObject.NULL) },
-                )
-                put(
-                    "end",
-                    JSONObject()
-                        .put("dateTime", bozza.fine.atZone(zona).toOffsetDateTime().toString())
-                        .put("timeZone", zona.id)
-                        .also { if (modifica) it.put("date", JSONObject.NULL) },
-                )
-            }
-        }
         val percorso = "calendars/${codifica(bozza.calendarioId)}/events"
-        val risposta = if (modifica) {
-            chiama("PATCH", "$percorso/${codifica(bozza.eventoId!!)}", corpo = corpo)
+        val id = bozza.eventoId
+        // Per una modifica si parte dall'impegno completo, così invitati e promemoria restano com'erano.
+        val corpo = if (id != null) {
+            chiama("GET", "$percorso/${codifica(id)}") ?: JSONObject()
+        } else {
+            JSONObject()
+        }
+        corpo.put("summary", bozza.titolo.trim())
+        corpo.put("location", bozza.luogo.trim())
+        corpo.put("description", bozza.descrizione.trim())
+        if (bozza.tuttoIlGiorno) {
+            corpo.put("start", JSONObject().put("date", bozza.inizio.toLocalDate().toString()))
+            corpo.put("end", JSONObject().put("date", bozza.fine.toLocalDate().plusDays(1).toString()))
+        } else {
+            corpo.put(
+                "start",
+                JSONObject()
+                    .put("dateTime", bozza.inizio.atZone(zona).toOffsetDateTime().toString())
+                    .put("timeZone", zona.id),
+            )
+            corpo.put(
+                "end",
+                JSONObject()
+                    .put("dateTime", bozza.fine.atZone(zona).toOffsetDateTime().toString())
+                    .put("timeZone", zona.id),
+            )
+        }
+        val risposta = if (id != null) {
+            chiama("PUT", "$percorso/${codifica(id)}", corpo = corpo)
         } else {
             chiama("POST", percorso, corpo = corpo)
         }
         svuota()
-        return risposta?.optString("id") ?: bozza.eventoId.orEmpty()
+        return risposta?.optString("id") ?: id.orEmpty()
     }
 
     override fun elimina(impegno: Impegno) {
@@ -356,5 +369,8 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
 
     companion object {
         const val BASE = "https://www.googleapis.com/calendar/v3/"
+
+        // Compleanni, eventi creati da Gmail e simili non si possono modificare liberamente.
+        private val TIPI_MODIFICABILI = setOf("default", "")
     }
 }

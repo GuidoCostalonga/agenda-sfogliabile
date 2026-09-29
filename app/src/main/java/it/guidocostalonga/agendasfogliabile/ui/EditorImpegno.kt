@@ -200,7 +200,8 @@ fun EditorImpegno(
                                 "di modificare il calendario, dalle impostazioni del telefono."
                             impegno?.ricorrente == true -> "È un impegno che si ripete. Per non alterare " +
                                 "tutta la serie, modificalo dall'applicazione Google Calendar."
-                            else -> "Questo calendario è in sola lettura."
+                            else -> "Questo impegno è in sola lettura: il calendario non si può modificare " +
+                                "oppure è un tipo di impegno, come i compleanni, che Google non lascia cambiare."
                         },
                     )
                 }
