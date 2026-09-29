@@ -14,11 +14,21 @@ import java.net.URL
 import java.net.URLEncoder
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
+
+private val FORMATO_GOOGLE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX")
+
+/**
+ * Data e ora nel formato che Google Calendar accetta, con i secondi sempre presenti:
+ * «2026-09-29T15:00:00+02:00». Il toString() di Java li omette quando valgono zero.
+ */
+fun orarioGoogle(momento: LocalDateTime, zona: ZoneId): String = momento.atZone(zona).format(FORMATO_GOOGLE)
 
 /** Accesso all'account Google con il consenso della persona. */
 object AccessoGoogle {
@@ -343,13 +353,13 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
             corpo.put(
                 "start",
                 JSONObject()
-                    .put("dateTime", bozza.inizio.atZone(zona).toOffsetDateTime().toString())
+                    .put("dateTime", orarioGoogle(bozza.inizio, zona))
                     .put("timeZone", zona.id),
             )
             corpo.put(
                 "end",
                 JSONObject()
-                    .put("dateTime", bozza.fine.atZone(zona).toOffsetDateTime().toString())
+                    .put("dateTime", orarioGoogle(bozza.fine, zona))
                     .put("timeZone", zona.id),
             )
         }
