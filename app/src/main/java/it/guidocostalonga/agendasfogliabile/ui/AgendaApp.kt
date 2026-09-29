@@ -73,6 +73,7 @@ import it.guidocostalonga.agendasfogliabile.util.giorniTra
 import it.guidocostalonga.agendasfogliabile.util.lunediDi
 import it.guidocostalonga.agendasfogliabile.util.settimaneTra
 import it.guidocostalonga.agendasfogliabile.widget.AgendaWidget
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -375,6 +376,8 @@ private fun VistaAgenda(
                     val impegni by produceState<List<Impegno>?>(null, lunedi, scelti, versione, fonte) {
                         value = try {
                             withContext(Dispatchers.IO) { fonte.impegni(lunedi, lunedi.plusDays(6), scelti) }
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             onErrore(e)
                             emptyList()
@@ -397,6 +400,8 @@ private fun VistaAgenda(
                     val impegni by produceState<List<Impegno>?>(null, giorno, scelti, versione, fonte) {
                         value = try {
                             withContext(Dispatchers.IO) { fonte.impegni(giorno, giorno, scelti) }
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             onErrore(e)
                             emptyList()
@@ -423,7 +428,11 @@ private fun VistaAgenda(
                         .widthIn(max = 560.dp),
                 ) {
                     Avviso(problema)
-                    TextButton(onClick = onRiprova) { Text("Riprova", color = Color.White, fontWeight = FontWeight.Bold) }
+                    Button(
+                        onClick = onRiprova,
+                        colors = ButtonDefaults.buttonColors(containerColor = Colori.Copertina, contentColor = Color.White),
+                        modifier = Modifier.padding(top = 6.dp),
+                    ) { Text("Riprova", fontWeight = FontWeight.Bold) }
                 }
             }
         }

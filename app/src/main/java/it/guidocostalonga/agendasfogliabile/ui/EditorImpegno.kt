@@ -54,6 +54,7 @@ import it.guidocostalonga.agendasfogliabile.data.Preferenze
 import it.guidocostalonga.agendasfogliabile.util.dataEstesa
 import it.guidocostalonga.agendasfogliabile.util.nomeGiornoBreve
 import it.guidocostalonga.agendasfogliabile.util.testo
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -90,6 +91,8 @@ fun EditorImpegno(
             withContext(Dispatchers.IO) {
                 try {
                     fonte.bozza(impegno)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     errore = descriviErrore(e)
                     null

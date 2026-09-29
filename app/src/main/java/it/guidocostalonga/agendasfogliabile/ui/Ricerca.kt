@@ -29,6 +29,7 @@ import it.guidocostalonga.agendasfogliabile.data.FonteCalendario
 import it.guidocostalonga.agendasfogliabile.data.descriviErrore
 import it.guidocostalonga.agendasfogliabile.data.Impegno
 import it.guidocostalonga.agendasfogliabile.util.dataConGiorno
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -62,6 +63,8 @@ fun Ricerca(
         problema = null
         risultati = try {
             withContext(Dispatchers.IO) { fonte.impegni(oggi.minusYears(1), oggi.plusYears(2), scelti, cercato, 300) }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             problema = descriviErrore(e)
             emptyList()

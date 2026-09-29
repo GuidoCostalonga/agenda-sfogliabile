@@ -50,6 +50,8 @@ object Fonti {
 fun descriviErrore(errore: Throwable): String {
     val causa = if (errore is ExecutionException && errore.cause != null) errore.cause!! else errore
     return when (causa) {
+        is java.util.concurrent.CancellationException ->
+            "Caricamento interrotto: riprova."
         is AccessoNecessario ->
             "L'accesso a Google è scaduto o è stato revocato. Ricollegati dal menu ⋮, «Calendari e collegamento»."
         is UnknownHostException, is ConnectException, is SocketTimeoutException ->

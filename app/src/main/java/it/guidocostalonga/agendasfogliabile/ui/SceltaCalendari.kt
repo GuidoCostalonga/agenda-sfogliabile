@@ -34,6 +34,7 @@ import it.guidocostalonga.agendasfogliabile.data.Calendario
 import it.guidocostalonga.agendasfogliabile.data.FonteCalendario
 import it.guidocostalonga.agendasfogliabile.data.Preferenze
 import it.guidocostalonga.agendasfogliabile.data.descriviErrore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -56,6 +57,8 @@ fun SceltaCalendari(
         value = null
         value = try {
             withContext(Dispatchers.IO) { fonte.calendari() }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             problema = descriviErrore(e)
             emptyList()
