@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agenda Sfogliabile</title>
+<meta name="description" content="Applicazione Android che mostra il calendario di Google come un'agenda di carta da sfogliare.">
+<style>
+  :root { --copertina:#1E3553; --pagina:#FBF5E6; --inchiostro:#2B2A28; --tenue:#6E665A; --riga:#DCCFB0; --nastro:#9E2A2B; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--copertina); color:var(--inchiostro); font:17px/1.6 Georgia, "Times New Roman", serif; }
+  main { position:relative; max-width:760px; margin:24px auto; background:var(--pagina); padding:32px 28px 40px; border-radius:4px 12px 12px 4px; box-shadow:0 8px 24px rgba(0,0,0,.35); }
+  main::after { content:""; position:absolute; top:0; right:40px; width:18px; height:72px; background:var(--nastro); clip-path:polygon(0 0,100% 0,100% 100%,50% 84%,0 100%); }
+  h1 { font-size:34px; line-height:1.2; margin:0 0 4px; padding-right:40px; }
+  .sottotitolo { color:var(--tenue); font-style:italic; margin:0 0 24px; }
+  h2 { font-size:20px; margin:28px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--riga); }
+  ul { padding-left:20px; }
+  li { margin:4px 0; }
+  a { color:var(--copertina); }
+  footer { margin-top:32px; font-size:14px; color:var(--tenue); }
+  @media (max-width:600px) { main { margin:0; border-radius:0; padding:24px 16px 32px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Agenda Sfogliabile</h1>
+  <p class="sottotitolo">Il tuo Google Calendar come un'agenda di carta, da sfogliare con il dito.</p>
+
+  <p>Agenda Sfogliabile è un'applicazione per telefoni e tablet Android. Mostra gli impegni del tuo calendario Google su pagine color avorio, con le righe delle ore e il nastrino segnalibro, e le pagine si girano come in un'agenda vera.</p>
+
+  <h2>Che cosa fa</h2>
+  <ul>
+    <li>Un giorno per pagina, oppure la settimana su due pagine affiancate su tablet e con il telefono in orizzontale.</li>
+    <li>Indice del mese per saltare a qualsiasi giorno.</li>
+    <li>Creazione, modifica ed eliminazione degli impegni, che finiscono direttamente su Google Calendar.</li>
+    <li>Ricerca per parola in titolo, luogo e note.</li>
+    <li>Scelta dei calendari da mostrare.</li>
+    <li>Riquadro sulla schermata iniziale con gli impegni di oggi.</li>
+  </ul>
+
+  <h2>I tuoi dati</h2>
+  <p>L'agenda si collega al tuo account Google solo con il tuo consenso e non ha un proprio server: gli impegni passano soltanto fra il tuo telefono e Google. I dettagli sono nell'<a href="privacy.html">informativa sulla privacy</a>.</p>
+
+  <h2>Contatti</h2>
+  <p>Realizzata da Guido Costalonga. Per domande o segnalazioni: <a href="mailto:guidoguido76@gmail.com">guidoguido76@gmail.com</a>.</p>
+
+  <footer><a href="privacy.html">Informativa sulla privacy</a></footer>
+</main>
+</body>
+</html>

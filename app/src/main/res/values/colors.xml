@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="copertina">#FF1E3553</color>
+    <color name="pagina">#FFFBF5E6</color>
+    <color name="riga">#FFDCCFB0</color>
+    <color name="inchiostro">#FF2B2A28</color>
+    <color name="inchiostro_tenue">#FF6E665A</color>
+    <color name="nastro">#FF9E2A2B</color>
+    <color name="icona_sfondo">#FF1E3553</color>
+</resources>

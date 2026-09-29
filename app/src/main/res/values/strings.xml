@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Agenda Sfogliabile</string>
+    <string name="widget_descrizione">Gli impegni di oggi dalla tua agenda</string>
+    <string name="widget_vuoto">Nessun impegno oggi</string>
+</resources>

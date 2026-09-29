@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Agenda chiusa: dorso dorato, pagina avorio con righe e nastrino rosso. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFC9A55C"
+        android:pathData="M33,31 L40,31 L40,79 L33,79 Z" />
+    <path
+        android:fillColor="#FFFBF5E6"
+        android:pathData="M39,31 L72,31 Q76,31 76,35 L76,75 Q76,79 72,79 L39,79 Z" />
+    <path
+        android:strokeColor="#FF9E2A2B"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M46,39 L58,39" />
+    <path
+        android:strokeColor="#FFB8AA8A"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M46,48 L69,48 M46,56 L69,56 M46,64 L69,64 M46,72 L60,72" />
+    <path
+        android:fillColor="#FF9E2A2B"
+        android:pathData="M63,29 L69,29 L69,86 L66,82.5 L63,86 Z" />
+</vector>
