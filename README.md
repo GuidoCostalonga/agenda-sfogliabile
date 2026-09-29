@@ -61,33 +61,25 @@ versione e la pubblica fra le Releases. Per aggiornare basta scaricare e aprire
 il nuovo file APK (Android Package, il formato di installazione delle
 applicazioni Android).
 
-### Chiave di firma fissa (consigliata)
+### Chiave di firma (obbligatoria)
 
 Android installa un aggiornamento solo se è firmato con la stessa chiave della
-versione già presente. Senza impostazioni particolari la compilazione usa una
-chiave di prova conservata nella memoria temporanea di GitHub Actions, che però
-scade se non si compila per sette giorni: in quel caso bisogna disinstallare e
-reinstallare l'applicazione (i dati del calendario non si perdono, stanno su
-Google).
-
-Per avere una chiave definitiva, una volta sola, da un computer con Java:
-
-```
-keytool -genkeypair -v -keystore firma.jks -alias agenda -keyalg RSA -keysize 2048 -validity 10000
-base64 -w0 firma.jks > firma.txt
-```
-
-Poi, nel repository su GitHub, in Settings, Secrets and variables, Actions,
-aggiungi quattro segreti:
+versione già presente, e Google riconosce l'applicazione proprio dall'impronta
+di quella chiave. Per questo GitHub Actions pubblica l'APK nelle Releases solo se
+nel repository ci sono i segreti della chiave di firma definitiva
+(`firma-agenda.jks`). In Settings, Secrets and variables, Actions, servono:
 
 | Nome | Valore |
 |---|---|
-| `KEYSTORE_BASE64` | il contenuto di `firma.txt` |
-| `KEYSTORE_PASSWORD` | la password scelta per il file |
+| `KEYSTORE_BASE64` | il file `firma-agenda.jks` codificato in base64 |
+| `KEYSTORE_PASSWORD` | la password della chiave |
 | `KEY_ALIAS` | `agenda` |
-| `KEY_PASSWORD` | la password della chiave |
+| `KEY_PASSWORD` | la password della chiave (la stessa) |
 
-Conserva `firma.jks` in un luogo sicuro e non caricarlo nel repository.
+Impronta SHA-1 della chiave, da indicare nel client Android su Google Cloud:
+`39:FE:AE:73:23:A2:EF:BF:12:97:BA:99:B2:34:DD:13:40:FB:E1:FC`.
+
+Il file della chiave non va mai caricato nel repository.
 
 ## Struttura del codice
 
