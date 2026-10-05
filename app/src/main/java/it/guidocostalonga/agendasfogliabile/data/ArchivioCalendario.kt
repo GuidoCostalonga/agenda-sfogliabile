@@ -24,6 +24,8 @@ class ArchivioCalendario(context: Context) : FonteCalendario {
 
     fun puoLeggere(): Boolean = concesso(Manifest.permission.READ_CALENDAR)
 
+    override var alCambio: (() -> Unit)? = null
+
     override fun puoScrivere(): Boolean = concesso(Manifest.permission.WRITE_CALENDAR)
 
     private fun concesso(permesso: String): Boolean =

@@ -24,8 +24,11 @@ interface FonteCalendario {
     fun salva(bozza: Bozza): String
     fun elimina(impegno: Impegno)
 
-    /** Dimentica i dati tenuti in memoria, così la prossima lettura è fresca. */
+    /** Segna come vecchi i dati tenuti in memoria, così la prossima lettura li aggiorna. */
     fun svuota() = Unit
+
+    /** Chiamata quando un aggiornamento in secondo piano porta impegni diversi. */
+    var alCambio: (() -> Unit)?
 }
 
 /** Il consenso a Google manca, è scaduto o è stato revocato. */
@@ -50,6 +53,7 @@ object Fonti {
 fun descriviErrore(errore: Throwable): String {
     val causa = if (errore is ExecutionException && errore.cause != null) errore.cause!! else errore
     return when (causa) {
+        is java.util.concurrent.CompletionException -> descriviErrore(causa.cause ?: causa)
         is java.util.concurrent.CancellationException ->
             "Caricamento interrotto: riprova."
         is AccessoNecessario ->

@@ -3,6 +3,8 @@ package it.guidocostalonga.agendasfogliabile.data
 import android.accounts.Account
 import android.content.Context
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
@@ -20,6 +22,10 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 private val FORMATO_GOOGLE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX")
@@ -93,14 +99,25 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
     private var scadenza = 0L
     private var elenco: Pair<Long, List<Calendario>>? = null
     private var coloriEventi: Map<String, Int>? = null
-    private val mesi = HashMap<YearMonth, Pair<Long, List<Impegno>>>()
+    /** Mesi già scaricati, con il momento della lettura. Restano solo in memoria. */
+    private val mesi = ConcurrentHashMap<YearMonth, Pair<Long, List<Impegno>>>()
+
+    /** Scaricamenti in corso, per non chiedere due volte lo stesso mese. */
+    private val inCorso = ConcurrentHashMap<YearMonth, CompletableFuture<List<Impegno>>>()
+
+    private val lavoriMesi = Executors.newFixedThreadPool(3)
+    private val lavoriCalendari = Executors.newFixedThreadPool(6)
+    private val principale = Handler(Looper.getMainLooper())
+
+    @Volatile
+    override var alCambio: (() -> Unit)? = null
 
     override fun puoScrivere(): Boolean = true
 
-    @Synchronized
+    /** I dati restano visibili ma diventano «vecchi»: alla prossima lettura si aggiornano in silenzio. */
     override fun svuota() {
-        elenco = null
-        mesi.clear()
+        synchronized(this) { elenco = null }
+        for ((mese, voce) in mesi) mesi[mese] = 0L to voce.second
     }
 
     @Synchronized
@@ -130,6 +147,7 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
         val indirizzo = URL(BASE + percorso + domanda)
         for (tentativo in 0..1) {
             val connessione = indirizzo.openConnection() as HttpURLConnection
+            var riuscita = false
             try {
                 connessione.connectTimeout = 15_000
                 connessione.readTimeout = 30_000
@@ -151,11 +169,16 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
                     val dettaglio = connessione.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                     throw IOException("Google ha rifiutato l'operazione (codice $codice). ${AccessoGoogle.spiegaRisposta(dettaglio)}")
                 }
-                if (codice == 204) return null
+                if (codice == 204) {
+                    riuscita = true
+                    return null
+                }
+                // Leggere tutta la risposta e chiudere il flusso rimette la connessione a disposizione.
                 val testo = connessione.inputStream.bufferedReader().use { it.readText() }
+                riuscita = true
                 return if (testo.isBlank()) null else JSONObject(testo)
             } finally {
-                connessione.disconnect()
+                if (!riuscita) connessione.disconnect()
             }
         }
         throw AccessoNecessario()
@@ -185,7 +208,13 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
     @Synchronized
     override fun calendari(): List<Calendario> {
         elenco?.let { (quando, valore) -> if (System.currentTimeMillis() - quando < 10 * 60_000L) return valore }
-        val voci = tutti("users/me/calendarList", mapOf("maxResults" to "250"))
+        val voci = tutti(
+            "users/me/calendarList",
+            mapOf(
+                "maxResults" to "250",
+                "fields" to "nextPageToken,items(id,summary,summaryOverride,backgroundColor,accessRole,primary)",
+            ),
+        )
         val calendari = voci
             .sortedWith(compareBy<JSONObject>({ !it.optBoolean("primary") }, { it.optString("summary") }))
             .map { voce ->
@@ -249,35 +278,85 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
         )
     }
 
+    private fun scaricaCalendario(calendario: Calendario, da: Instant, a: Instant, filtro: String?): List<Impegno> {
+        val parametri = buildMap {
+            put("timeMin", da.toString())
+            put("timeMax", a.toString())
+            put("singleEvents", "true")
+            put("orderBy", "startTime")
+            put("maxResults", "2500")
+            put("fields", CAMPI_EVENTI)
+            if (!filtro.isNullOrBlank()) put("q", filtro.trim())
+        }
+        return tutti("calendars/${codifica(calendario.id)}/events", parametri).mapNotNull { leggi(it, calendario) }
+    }
+
+    /**
+     * Legge i calendari in parallelo. Se uno solo non risponde si mostrano gli altri;
+     * l'errore si segnala soltanto se non ha risposto nessuno.
+     */
     private fun scarica(calendari: List<Calendario>, da: Instant, a: Instant, filtro: String?): List<Impegno> {
+        if (calendari.isEmpty()) return emptyList()
+        val futuri = calendari.map { calendario ->
+            CompletableFuture.supplyAsync({ scaricaCalendario(calendario, da, a, filtro) }, lavoriCalendari)
+        }
         val risultato = mutableListOf<Impegno>()
-        for (calendario in calendari) {
-            val parametri = buildMap {
-                put("timeMin", da.toString())
-                put("timeMax", a.toString())
-                put("singleEvents", "true")
-                put("orderBy", "startTime")
-                put("maxResults", "2500")
-                if (!filtro.isNullOrBlank()) put("q", filtro.trim())
-            }
-            tutti("calendars/${codifica(calendario.id)}/events", parametri).forEach { voce ->
-                leggi(voce, calendario)?.let { risultato += it }
+        var primoErrore: Throwable? = null
+        var riusciti = 0
+        for (futuro in futuri) {
+            try {
+                risultato += futuro.join()
+                riusciti++
+            } catch (e: CompletionException) {
+                if (primoErrore == null) primoErrore = e.cause ?: e
             }
         }
+        if (riusciti == 0 && primoErrore != null) throw primoErrore
         return risultato
     }
 
-    /** Gli impegni di un mese di tutti i calendari, tenuti in memoria per cinque minuti. */
-    @Synchronized
+    /** Avvia (o riprende, se è già in corso) lo scaricamento di un mese. */
+    private fun scaricaMese(mese: YearMonth): CompletableFuture<List<Impegno>> =
+        inCorso.computeIfAbsent(mese) { m ->
+            CompletableFuture.supplyAsync({
+                try {
+                    val zona = ZoneId.systemDefault()
+                    // Un giorno di margine per parte: gli impegni di un giorno intero sono in tempo universale.
+                    val da = m.atDay(1).minusDays(1).atStartOfDay(zona).toInstant()
+                    val a = m.atEndOfMonth().plusDays(2).atStartOfDay(zona).toInstant()
+                    val nuovi = scarica(calendari(), da, a, null)
+                    val vecchi = mesi.put(m, System.currentTimeMillis() to nuovi)?.second
+                    // Se l'aggiornamento in silenzio ha portato novità, la pagina si ridisegna.
+                    if (vecchi != null && vecchi != nuovi) principale.post { alCambio?.invoke() }
+                    nuovi
+                } finally {
+                    inCorso.remove(m)
+                }
+            }, lavoriMesi)
+        }
+
+    /**
+     * Gli impegni di un mese. Se il mese è già in memoria esce subito, anche quando è un po' vecchio:
+     * in quel caso si aggiorna in silenzio. Si aspetta Google solo per un mese mai visto.
+     */
     private fun mese(mese: YearMonth): List<Impegno> {
-        mesi[mese]?.let { (quando, valore) -> if (System.currentTimeMillis() - quando < 5 * 60_000L) return valore }
-        val zona = ZoneId.systemDefault()
-        // Un giorno di margine per parte: gli impegni di un giorno intero sono in tempo universale.
-        val da = mese.atDay(1).minusDays(1).atStartOfDay(zona).toInstant()
-        val a = mese.atEndOfMonth().plusDays(2).atStartOfDay(zona).toInstant()
-        val valore = scarica(calendari(), da, a, null)
-        mesi[mese] = System.currentTimeMillis() to valore
-        return valore
+        val voce = mesi[mese]
+        if (voce != null) {
+            if (System.currentTimeMillis() - voce.first > FRESCHEZZA) scaricaMese(mese).exceptionally { null }
+            return voce.second
+        }
+        try {
+            return scaricaMese(mese).join()
+        } catch (e: CompletionException) {
+            throw e.cause ?: e
+        }
+    }
+
+    /** Prepara in anticipo i mesi vicini, così sfogliando non si aspetta. */
+    private fun preparaVicini(primo: YearMonth, ultimo: YearMonth) {
+        for (m in listOf(primo.minusMonths(1), ultimo.plusMonths(1))) {
+            if (!mesi.containsKey(m)) scaricaMese(m).exceptionally { null }
+        }
     }
 
     override fun impegni(
@@ -296,7 +375,7 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
             val mesiUtili = generateSequence(YearMonth.from(dal)) { it.plusMonths(1) }
                 .takeWhile { !it.isAfter(YearMonth.from(al)) }
                 .toList()
-            mesiUtili.flatMap { mese(it) }
+            mesiUtili.flatMap { mese(it) }.also { preparaVicini(mesiUtili.first(), mesiUtili.last()) }
         }
         return grezzi
             .asSequence()
@@ -368,13 +447,27 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
         } else {
             chiama("POST", percorso, corpo = corpo)
         }
-        svuota()
+        rileggi(bozza.inizio.toLocalDate(), bozza.fine.toLocalDate())
         return risposta?.optString("id") ?: id.orEmpty()
     }
 
     override fun elimina(impegno: Impegno) {
         chiama("DELETE", "calendars/${codifica(impegno.calendarioId)}/events/${codifica(impegno.eventoId)}")
+        val zona = ZoneId.systemDefault()
+        rileggi(impegno.giornoInizio(zona), impegno.giornoFine(zona))
+    }
+
+    /** Rilegge subito i mesi toccati da una modifica; gli altri si aggiornano in silenzio. */
+    private fun rileggi(dal: LocalDate, al: LocalDate) {
         svuota()
+        val primo = YearMonth.from(dal)
+        val ultimo = YearMonth.from(if (al.isBefore(dal)) dal else al)
+        generateSequence(primo) { it.plusMonths(1) }.takeWhile { !it.isAfter(ultimo) }.forEach { m ->
+            // Un aggiornamento partito prima della modifica porterebbe dati vecchi: lo si lascia finire.
+            inCorso[m]?.let { runCatching { it.join() } }
+            mesi.remove(m)
+            runCatching { scaricaMese(m).join() }
+        }
     }
 
     companion object {
@@ -382,5 +475,12 @@ class FonteGoogle(private val context: Context, val email: String) : FonteCalend
 
         // Compleanni, eventi creati da Gmail e simili non si possono modificare liberamente.
         private val TIPI_MODIFICABILI = setOf("default", "")
+
+        /** Dopo quanto tempo un mese in memoria si riaggiorna in silenzio. */
+        private const val FRESCHEZZA = 2 * 60_000L
+
+        /** Solo i campi che l'agenda usa davvero: risposte più leggere. */
+        private const val CAMPI_EVENTI =
+            "nextPageToken,items(id,status,summary,location,start,end,colorId,recurringEventId,recurrence,eventType,htmlLink)"
     }
 }

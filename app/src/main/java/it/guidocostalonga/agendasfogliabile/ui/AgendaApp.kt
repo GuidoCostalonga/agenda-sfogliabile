@@ -181,6 +181,10 @@ private fun AgendaConFonte(
         context.contentResolver.registerContentObserver(CalendarContract.CONTENT_URI, true, osservatore)
         onDispose { context.contentResolver.unregisterContentObserver(osservatore) }
     }
+    DisposableEffect(fonte) {
+        fonte.alCambio = { modifiche++ }
+        onDispose { fonte.alCambio = null }
+    }
     val versione = modifiche + ripresa
     LaunchedEffect(versione) {
         delay(1500)
